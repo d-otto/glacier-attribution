@@ -1,0 +1,26 @@
+---
+glaciers:
+  RGI60-11.00897:
+    name: 'Hintereisferner'
+    flowline_params:
+      T0: 22.25
+      P0: 1.5
+      ss_noise_profile: "features/flowline/flowline2d_RGI60-11.00897.ss.noise.pickle"
+  RGI60-11.03638:  # argentiere
+    name: 'Argentiere'
+    flowline_params:
+      T0: 10
+  RGI60-02.18778:  # south cascade
+    name: 'South Cascade'
+    flowline_params:
+      sigT: 1
+      T0: 16.00
+      sigP: 0
+      P0: 2.5
+      ss_noise_profile: "features/flowline/flowline2d_RGI60-02.18778.ss.noise.pickle"
+  RGI60-01.09162:  # wolverine
+    name: 'Wolverine'
+    flowline_params: 
+      T0: 13.68
+      P0: 3.5
+      ss_noise_profile: "features/flowline/flowline2d_RGI60-01.09162.ss.noise.pickle"
