@@ -63,7 +63,7 @@ model = lgm.flowline2d(x_gr=x_gr, zb_gr=zb_gr, x_geom=x_geom, w_geom=w_geom, x_i
                        temp=partial(temp_step, step=0.5, Tdot=-0.5), sigT=0, sigP=0, P0=3.5,
                        delt=0.0125/8,
                        ts=0, tf=1500, T0=12.51, t_stab=500,
-                       Trand=Trand, Prand=Prand, gamma=6.5e-3,
+                       T=Trand, P=Prand, gamma=6.5e-3,
                        rt_plot=True, dt_plot=100)
 
 fig = model.plot(xlim0=0, compare_fp='flowline2d_wolv_widthexp_wide-step-p05.pickle')

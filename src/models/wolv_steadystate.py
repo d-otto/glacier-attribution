@@ -65,7 +65,7 @@ model = lgm.flowline2d(x_gr=x_gr, zb_gr=zb_gr, x_geom=x_geom, w_geom=w_geom, x_i
                        temp=temp_stable, sigT=1, sigP=0, P0=5,
                        delt=0.0125/8,
                        ts=0, tf=5000, T0=14.75,
-                       Trand=Trand, Prand=Prand, gamma=6.5e-3,
+                       T=Trand, P=Prand, gamma=6.5e-3,
                        rt_plot=True, dt_plot=100)
 
 fig = model.plot(xlim0=0)

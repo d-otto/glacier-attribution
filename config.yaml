@@ -2,9 +2,13 @@
 glaciers:
   RGI60-11.00897:
     name: 'Hintereisferner'
+    WGMS_ID: 491
     flowline_params:
-      T0: 22.25
+      T0: 22.27
       P0: 1.5
+      L0:
+        value: 10250 
+        year: 1855
       ss_noise_profile: "features/flowline/flowline2d_RGI60-11.00897.ss.noise.pickle"
   RGI60-11.03638:  # argentiere
     name: 'Argentiere'
@@ -14,9 +18,12 @@ glaciers:
     name: 'South Cascade'
     flowline_params:
       sigT: 1
-      T0: 16.00
+      T0: 16.28
       sigP: 0
       P0: 2.5
+      L0:
+        value: 4450
+        year: 1850
       ss_noise_profile: "features/flowline/flowline2d_RGI60-02.18778.ss.noise.pickle"
   RGI60-01.09162:  # wolverine
     name: 'Wolverine'

@@ -1,5 +1,10 @@
 # Repository specific
 data/**/*.nc
+features/**/*.nc
+data/**/*.nc4
+*.bak
+*..status
+*.status
 *.sqllite
 
 # Byte-compiled / optimized / DLL files

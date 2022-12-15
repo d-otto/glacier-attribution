@@ -22,6 +22,7 @@ import cftime
 import matplotlib.pyplot as plt
 from pyproj import Transformer
 import re
+from functools import partial
 
 from config import ROOT
 from src.util import unwrap_coords
@@ -78,12 +79,13 @@ def read_gcm(dirname=r'data/gcm_casestudy',
 
 ################################################################################
 def list_to_regex_or(l):
-    l = '|'.join(l)
+    if isinstance(l, list):
+        l = '|'.join(l)
     return f'({l})'
 
 
 ################################################################################
-def get_cmip6_run_attrs(dirname, by='model', model=None, variant=None, experiment=None):
+def get_cmip6_run_attrs(dirname, by=None, model=None, variant=None, experiment=None):
     '''
     
     Parameters
@@ -105,14 +107,18 @@ def get_cmip6_run_attrs(dirname, by='model', model=None, variant=None, experimen
     segments = {k:list_to_regex_or(v) if v is not None else '.+' for k,v in segments.items()}
     
     segment_map = {'model':2, 'experiment':3, 'variant':4}
-    segment_num = segment_map[by]
+    
     pattern = re.compile(rf"tas_Amon_{segments['model']}_{segments['experiment']}_{segments['variant']}_.+\.nc")
 
     p = Path(ROOT, dirname)
     fps = list(p.iterdir())
     fps = [fp for fp in fps if re.match(pattern, fp.name)]
-    res = [fp.name.split('_')[segment_num] for fp in fps]
-    res = list(set(res))  # get unique
+    if by is not None:
+        segment_num = segment_map[by]
+        res = [fp.name.split('_')[segment_num] for fp in fps]
+        res = list(set(res))  # get unique
+    else:
+        res = list(set(fps))  # get unique
     
     if len(res) == 0:
         raise ValueError(f"No runs found with given pattern:\n{segments}\n{pattern}")
@@ -121,7 +127,29 @@ def get_cmip6_run_attrs(dirname, by='model', model=None, variant=None, experimen
 
 
 ################################################################################
-def read_cmip6_model(dirname, pattern=None, fps=None, freq='jjas'):
+def extract_cmip_points(ds, glaciers, variable, freq, mip):
+    '''
+    da should already have all the identifying coordinates it needs. All it gets here is one for the RGIID 
+    '''
+    model = ds.model.item()
+    experiment = ds.experiment.item()
+    variant = ds.variant.item()
+    da = ds[variable]
+    for rgiid, glacier in glaciers.iterrows():
+        xy = glacier.geometry.centroid
+        lon = xy.x
+        lat = xy.y
+        lon, lat = unwrap_coords(lon, lat)
+        pt = da.interp(lat=lat, lon=lon, method='linear')
+        pt = pt.expand_dims('rgiid')
+        pt = pt.assign_coords(dict(rgiid=('rgiid', [rgiid])))
+        p = Path(ROOT, f'data/interim/gcm/cmip{mip}/{rgiid}_{variable}_{freq}_{model}_{experiment}_{variant}.nc')
+        pt.to_netcdf(p)
+        
+    
+
+################################################################################
+def read_cmip_model(fps=None, freq='jjas', mip=6):
     '''
     
     Parameters
@@ -137,27 +165,47 @@ def read_cmip6_model(dirname, pattern=None, fps=None, freq='jjas'):
 
     '''
     
-    if pattern is not None:
-        pattern = re.compile(pattern)
-        
-        p = Path(ROOT, dirname)
-        fps = list(p.iterdir())
-        fps = [fp for fp in fps if re.match(pattern, fp.name)]
-    
-    d = []
-    for fp in fps:
-        ds = xr.open_dataset(fp, engine='netcdf4', use_cftime=True)#.drop_vars(['time_bnds', 'lat_bnds', 'lon_bnds'])
+    def read_file(fp):
+        try:
+            ds = xr.open_dataset(fp, use_cftime=True, cache=False)  # .drop_vars(['time_bnds', 'lat_bnds', 'lon_bnds'])
+        except:
+            raise ValueError(f'Failed on {fp}')
         ds['time'] = xr.apply_ufunc(cftime.date2num, ds.time,
-                                    kwargs={'units': 'common_years since 0000-01-01', 'calendar': '365_day',
+                                    kwargs={'units'        : 'common_years since 0000-01-01', 'calendar': '365_day',
                                             'has_year_zero': True})
+
+        ds = ds.expand_dims('mip')
+        ds = ds.expand_dims('model')
+        ds = ds.expand_dims('experiment')
+        ds = ds.expand_dims('variant')
+        if mip == 6:
+            ds = ds.assign_coords(dict(mip=('mip', [6])))
+            ds = ds.assign_coords(dict(model=('model', [ds.attrs['source_id']])))
+            ds = ds.assign_coords(dict(experiment=('experiment', [ds.attrs['experiment_id']])))
+            ds = ds.assign_coords(dict(variant=('variant', [ds.attrs['variant_label']])))
+        elif mip == 5:
+            ds = ds.assign_coords(dict(mip=('mip', [5])))
+            ds = ds.assign_coords(dict(model=('model', [ds.attrs['model_id']])))
+            ds = ds.assign_coords(dict(experiment=('experiment', [ds.attrs['experiment_id']])))
+            ds = ds.assign_coords(dict(variant=('variant', [f"r{ds.attrs['realization']}i{ds.attrs['initialization_method']}p{ds.attrs['physics_version']}f1"])))
+        ds = ds.drop_vars(['time_bnds', 'height'], errors='ignore')
         ds = ds.drop_duplicates('time')
-        d.append(ds)
-    d = xr.concat(d, dim='time')
+        return ds
     
+    if isinstance(fps, list):
+        d = []
+        for fp in fps:
+            ds = read_file(fp)
+            d.append(ds)
+        d = xr.concat(d, dim='time')
+    else:
+        d = read_file(fps)
+            
     try:
         d = d.rename({'latitude': 'lat', 'longitude': 'lon'})
     except:
         pass
+        
     
     if freq == 'year':
         # ds = ds.interp(time=np.arange(np.ceil(ds.time.min()), ds.time.max().round(), 1))
@@ -168,47 +216,181 @@ def read_cmip6_model(dirname, pattern=None, fps=None, freq='jjas'):
         mask = (d.time % 1 > 6/12) & (d.time % 1 < 9.75/12)  # hopefully this captures models which have their times in the center of the month
         d = d.where(mask)
         d = d.groupby(np.floor(d.time)).mean()
-        
-    
-    return d
 
+    d = d.drop_duplicates('time')  # redundant?
+    return d
+    
+
+########################################################################################
+def get_cmip6_lm():
+    '''
+    Convenience function to pull past1k & p1k-initialized historical runs and concatenate them
+    
+    Returns
+    -------
+
+    '''
+    
+    gcm_p1k = get_cmip6(by='model', experiment=['past1000', 'past2k'], freq='jjas')
+    p1k_models = gcm_p1k.model
+    gcm_hist = get_cmip6(by='model', experiment=['historical'], model=p1k_models, freq='jjas')
+    gcm = {model: xr.concat([ds_p1k, gcm_hist[model]], dim='time') for model, ds_p1k in gcm_p1k.items() if
+           model in gcm_hist.keys()}
+
+    return gcm
+
+
+def _clean_cmip6_file(ds, freq):
+    '''
+    Steps to handle a cmip6 file immediately upon loading. Handles cftime and adds dimensions for later combination
+    
+    Parameters
+    ----------
+    ds : 
+    freq : 
+
+    Returns
+    -------
+
+    '''
+    ds['time'] = xr.apply_ufunc(cftime.date2num, ds.time,
+                                kwargs={'units': 'common_years since 0000-01-01', 'calendar': '365_day',
+                                        'has_year_zero': True})
+    ds = ds.drop_duplicates('time')
+    ds = ds.expand_dims('model')
+    ds = ds.assign_coords(dict(model=('model', [ds.attrs['source_id']])))
+    ds = ds.expand_dims('experiment')
+    ds = ds.assign_coords(dict(experiment=('experiment', [ds.attrs['experiment_id']])))
+    ds = ds.expand_dims('variant')
+    ds = ds.assign_coords(dict(variant=('variant', [ds.attrs['variant_label']])))
+    ds = ds.drop_vars('time_bnds', errors='ignore')
+
+    try:
+        ds = ds.rename({'latitude': 'lat', 'longitude': 'lon'})
+    except:
+        pass
+
+    if freq == 'year':
+        # ds = ds.interp(time=np.arange(np.ceil(ds.time.min()), ds.time.max().round(), 1))
+        ds = ds.groupby(np.floor(ds.time)).mean()
+    elif freq == 'mon':
+        pass
+    elif freq == 'jjas':
+        mask = (ds.time % 1 > 6 / 12) & (
+                ds.time % 1 < 9.75 / 12)  # hopefully this captures models which have their times in the center of the month
+        ds = ds.where(mask)
+        ds = ds.groupby(np.floor(ds.time)).mean()
+
+    ds.sel(time=(ds.time <= 2014))
+    return ds
 
 ################################################################################
-def get_cmip6(dirname='data/external/gcm/cmip6', by='model', model=None, experiment=None, variant=None, freq='jjas'):
+def get_cmip6(dirname='data/external/gcm/cmip6', by=None, model=None, experiment=None, variant=None, pattern=None, freq='jjas', merged=True):
+    '''
+    Wrapper for various retrival functions. This has variable output type depending on arguments.
+    Parameters
+    ----------
+    dirname : 
+    by : 
+    model : 
+    experiment : 
+    variant : 
+    pattern : 
+    freq : 
+    merged : 
+
+    Returns
+    -------
+
+    '''
     # This returns a dict instead of a merged xarray to preserve the attrs of each dataset.
-    
-    try:
-        groups = get_cmip6_run_attrs(dirname, by=by, model=model, experiment=experiment, variant=variant)
-    except:
-        raise ValueError(f"No groups found with model={model}, experiment={experiment}, variant={variant}")
-
-    segment_map = {'model': 2, 'experiment': 3, 'variant': 4}
-    segment_num = segment_map[by]
-
     p = Path(ROOT, dirname)
     fps = list(p.iterdir())
     if len(fps) == 0:
         raise ValueError(f"No files to get in {dirname}")
+
+    if merged:
+        if pattern is None:
+            pattern = _cmip6_pattern_from_attrs(model, experiment, variant)
+        fps = [fp for fp in fps if re.match(pattern, fp.name)]
+        # d = xr.open_mfdataset(fps, chunks={'lon': 2, 'lat': 2}, data_vars='minimal', parallel=True, combine_attrs='drop_conflicts', preprocess=partial(_clean_cmip6_file, freq=freq), engine='netcdf4', use_cftime=True, combine='by_coords', coords='minimal')
+        d = read_cmip_model(fps, freq=freq)
+        
+        return d
+            
+    else:
+        return _get_cmip6_by_attrs(dirname, freq, by, model, experiment, variant)
+
+
+################################################################################
+def _get_cmip6_by_attrs(dirname, freq, by=None, model=None, experiment=None, variant=None):
+    '''
+    Split off for convenience from get_cmip6()
+    
+    Parameters
+    ----------
+    dirname : 
+    freq : 
+    by : 
+    model : 
+    experiment : 
+    variant : 
+
+    Returns
+    -------
+
+    '''
+    try:
+        groups = get_cmip6_run_attrs(dirname, by=by, model=model, experiment=experiment, variant=variant)
+    except:
+        raise ValueError(f"No groups found with model={model}, experiment={experiment}, variant={variant}")
     
     d = dict()
     for group in groups:
         segments = {'model': model, 'experiment': experiment, 'variant': variant}
-        segments = {k: list_to_regex_or(v) if v is not None else '.+' for k, v in segments.items()}
         segments[by] = group
-        pattern = re.compile(rf"tas_Amon_{segments['model']}_{segments['experiment']}_{segments['variant']}_.+\.nc")
-        d[group] = read_cmip6_model(dirname, pattern=pattern, freq=freq)
+        pattern = _cmip6_pattern_from_attrs(**segments)
+        fps = [fp for fp in fps if re.match(pattern, fp.name)]
+        d[group] = read_cmip_model(fps=fps, freq=freq)
         
     return d
 
-########################################################################################
-def get_cmip6_lm():
-    gcm_p1k = get_cmip6(by='model', experiment=['past1000', 'past2k'], freq='jjas')
-    p1k_models = list(gcm_p1k.keys())
-    gcm_hist = get_cmip6(by='model', experiment=['historical'], model=p1k_models, freq='jjas')
-    gcm = {model: xr.concat([ds_p1k, gcm_hist[model]], dim='time') for model, ds_p1k in gcm_p1k.items() if
-           model in gcm_hist.keys()}
+################################################################################
+def _cmip6_pattern_from_attrs(model, experiment, variant):
+    '''
+    Take model, expeirment, and variant and convert it to a regex string to get file names
     
-    return gcm
+    Parameters
+    ----------
+    model : 
+    experiment : 
+    variant : 
+
+    Returns
+    -------
+
+    '''
+    segments = {'model': model, 'experiment': experiment, 'variant': variant}
+    segments = {k: list_to_regex_or(v) if v is not None else '.+' for k, v in segments.items()}
+    pattern = re.compile(rf"tas_Amon_{segments['model']}_{segments['experiment']}_{segments['variant']}_.+\.nc")
+    
+    return pattern
+
+
+#################################################################################
+def get_glacier_gcm(rgiids, variable, freq, mip=6, dirname=Path(ROOT, 'features/gcm')):
+    fps = list(dirname.iterdir())
+    
+    if isinstance(rgiids, list):
+        pattern = f'^cmip{mip}_{list_to_regex_or(rgiids)}_{variable}_{freq}'
+        fps = [fp for fp in fps if re.match(pattern, fp.name)]
+        ds = xr.open_mfdataset(fps, use_cftime=True)
+    else:
+        rgiid = rgiids
+        pattern = f'^cmip{mip}_{rgiid}_{variable}_{freq}'
+        fp = [fp for fp in fps if re.match(pattern, fp.name)][0]  # should only be one file
+        ds = xr.open_dataset(fp, use_cftime=True)
+    return ds
 
 ################################################################################
 def sample_glaciers_from_gcms(gcms, glaciers):
@@ -360,3 +542,11 @@ def rgi_to_sqllite():
     with conn:  # context manager bullshit (https://blog.rtwilson.com/a-python-sqlite3-context-manager-gotcha/)
         gdf.to_sql('rgi', conn, if_exists='replace', index=False)
     conn.close()
+    
+    
+########################################################################################
+# glacier length
+def get_glacier_lengths():
+    p = Path(ROOT, r'data\external\WGMS-FoG-2020-08-C-FRONT-VARIATION.csv')
+    df = pd.read_csv(p)
+    df['FRONT_VARIATION_cumulative'] = df.sort_values(by='Year').groupby('NAME')['FRONT_VARIATION'].cumsum()

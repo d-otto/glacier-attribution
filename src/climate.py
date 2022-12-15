@@ -22,16 +22,16 @@ from src import data
 
 class detrend_gcm:
     # todo : something is still fucky w/ this. 
-    def __init__(self, gcm, trend, t0=1850):
+    def __init__(self, gcm, trend, t0=1850, t1=2014):
         '''take a dataarray give a dataarray'''
         
-        trend = trend.loc[t0-1:]
-        trend = pd.Series(np.interp(gcm.time.loc[t0:], trend.index, trend), index=gcm.time.loc[t0:])  # match the trend indexes and lengths to gcm
+        trend = trend.loc[t0-1:t1]
+        trend = pd.Series(np.interp(gcm.time.loc[t0:t1], trend.index, trend), index=gcm.time.loc[t0:t1])  # match the trend indexes and lengths to gcm
         
         X = trend.copy()
         X = sm.add_constant(X)
-        idx = dict(time=slice(t0, None))
-        y = gcm.loc[idx]
+        idx = dict(time=slice(t0, t1))
+        y = gcm.loc[idx].to_numpy().squeeze()
         res = sm.OLS(y, X).fit()
         print(res.summary())
 
