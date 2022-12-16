@@ -42,12 +42,12 @@ def dict_key_from_value(d, v):
 def dropna_coords(da, dim, how='any'):
     '''Can only be used on dims'''
     other_coords = [c for c in da.dims if c != dim]
-    da_notnull = da.stack(notnull=other_coords).notnull()
+    da_notnull = da.copy().stack(notnull=other_coords).notnull()
     if how=='any':
         da_notnull = da_notnull.any(dim='notnull')
     elif how=='all':
         da_notnull = da_notnull.all(dim='notnull')
-    notnull_coords = da.coords['model'].where(da_notnull).to_pandas()
+    notnull_coords = da.coords[dim].where(da_notnull).to_pandas()
     notnull_coords = notnull_coords.dropna().values
-    return da.sel(model=notnull_coords)
+    return da.sel({dim:notnull_coords})
     
