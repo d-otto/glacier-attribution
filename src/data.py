@@ -127,7 +127,7 @@ def get_cmip6_run_attrs(dirname, by=None, model=None, variant=None, experiment=N
 
 
 ################################################################################
-def extract_cmip_points(ds, glaciers, variable, freq, mip):
+def extract_cmip_points(ds, glaciers, variable, freq, mip, use_cache=True):
     '''
     da should already have all the identifying coordinates it needs. All it gets here is one for the RGIID 
     '''
@@ -136,6 +136,7 @@ def extract_cmip_points(ds, glaciers, variable, freq, mip):
     variant = ds.variant.item()
     da = ds[variable]
     for rgiid, glacier in glaciers.iterrows():
+        p = Path(ROOT, f'data/interim/gcm/cmip{mip}/{rgiid}_{variable}_{freq}_{model}_{experiment}_{variant}.nc')
         xy = glacier.geometry.centroid
         lon = xy.x
         lat = xy.y
@@ -143,8 +144,8 @@ def extract_cmip_points(ds, glaciers, variable, freq, mip):
         pt = da.interp(lat=lat, lon=lon, method='linear')
         pt = pt.expand_dims('rgiid')
         pt = pt.assign_coords(dict(rgiid=('rgiid', [rgiid])))
-        p = Path(ROOT, f'data/interim/gcm/cmip{mip}/{rgiid}_{variable}_{freq}_{model}_{experiment}_{variant}.nc')
         pt.to_netcdf(p)
+            
         
     
 
@@ -178,17 +179,38 @@ def read_cmip_model(fps=None, freq='jjas', mip=6):
         ds = ds.expand_dims('model')
         ds = ds.expand_dims('experiment')
         ds = ds.expand_dims('variant')
+        ds = ds.expand_dims('collection')
         if mip == 6:
             ds = ds.assign_coords(dict(mip=('mip', [6])))
             ds = ds.assign_coords(dict(model=('model', [ds.attrs['source_id']])))
             ds = ds.assign_coords(dict(experiment=('experiment', [ds.attrs['experiment_id']])))
             ds = ds.assign_coords(dict(variant=('variant', [ds.attrs['variant_label']])))
+
+            res = re.findall('([A-Za-z]+)(\d+)', ds.attrs['variant_label'])
+            variant_components = dict(res)
+            
+            # handle special cases
+            if ds.attrs['experiment_id'] == 'hist-nat':
+                ds = ds.assign_coords(dict(collection=('collection', ['nat'])))
+            elif ds.attrs['experiment_id'] in ['past1000', 'past2k']:
+                ds = ds.assign_coords(dict(collection=('collection', ['lm'])))
+            elif (ds.attrs['experiment_id'] == 'historical') & (variant_components['i'] in ['1000', '2000']):
+                ds = ds.assign_coords(dict(collection=('collection', ['lm'])))
+            else:
+                ds = ds.assign_coords(dict(collection=('collection', ['anth'])))
+            
         elif mip == 5:
             ds = ds.assign_coords(dict(mip=('mip', [5])))
             ds = ds.assign_coords(dict(model=('model', [ds.attrs['model_id']])))
             ds = ds.assign_coords(dict(experiment=('experiment', [ds.attrs['experiment_id']])))
             ds = ds.assign_coords(dict(variant=('variant', [f"r{ds.attrs['realization']}i{ds.attrs['initialization_method']}p{ds.attrs['physics_version']}f1"])))
-        ds = ds.drop_vars(['time_bnds', 'height'], errors='ignore')
+            
+            # handle special cases
+            if ds.attrs['experiment_id'] == 'historicalNat':
+                ds = ds.assign_coords(dict(collection=('collection', ['nat'])))
+                
+        ds = ds.drop_vars(['time_bnds', 'lat_bnds', 'lon_bnds', 'height'], errors='ignore')
+        ds = ds.drop_dims('bnds', errors='ignore')
         ds = ds.drop_duplicates('time')
         return ds
     
@@ -321,6 +343,14 @@ def get_cmip6(dirname='data/external/gcm/cmip6', by=None, model=None, experiment
     else:
         return _get_cmip6_by_attrs(dirname, freq, by, model, experiment, variant)
 
+########################################################################################
+def cmip_fname_to_dict(fname):
+    segment_map = ['variable', 'frequency', 'model', 'experiment', 'variant']
+    segments = fname.name.split('_')
+    segments = {segment_map[i]:segments[i] for i in range(0, 5)}
+    
+    return segments
+    
 
 ################################################################################
 def _get_cmip6_by_attrs(dirname, freq, by=None, model=None, experiment=None, variant=None):
