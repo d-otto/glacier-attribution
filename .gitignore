@@ -1,5 +1,6 @@
 # Repository specific
 data/**/*.nc
+data/**/*.nc.*
 features/**/*.nc
 data/**/*.nc4
 *.bak
