@@ -1,0 +1,1 @@
+find ./cmip6/CMIP6 -type f -print0 | xargs -0 mv -t ./cmip6/
