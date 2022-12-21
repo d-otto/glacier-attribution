@@ -6,6 +6,7 @@ data/**/*.nc4
 *.bak
 *..status
 *.status
+*.sh.status
 *.sqllite
 
 # Byte-compiled / optimized / DLL files
