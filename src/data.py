@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 from pyproj import Transformer
 import re
 from functools import partial
+import logging
 
 from config import ROOT
 from src.util import unwrap_coords
@@ -84,6 +85,56 @@ def list_to_regex_or(l):
     return f'({l})'
 
 
+def get_cmip_facets(dirname, mip):
+    ps = dirname.glob('**/*.nc')
+    ps = [cmip_fname_to_dict(p) for p in ps]
+    df = pd.DataFrame(ps)
+    
+    return df
+
+
+def get_cmip_paths(dirname, mip, model=None, variant=None, experiment=None, grouped=False, group_order=None):
+    df = get_cmip_facets(dirname, mip)
+    
+    # mask1 = mask2 = mask3 = pd.DataFrame(False, index=df.index, columns=df.columns)
+    # if model:
+    #     if not isinstance(model, list):
+    #         model = [model]
+    #     mask1 = mask1.where(df.model.isin(model), True)
+    # if variant:
+    #     if not isinstance(variant, list):
+    #         variant = [variant]
+    #     mask2 = mask2.where(df.variant.isin(variant), True)
+    # if experiment:
+    #     if not isinstance(experiment, list):
+    #         experiment = [experiment]
+    #     mask3 = mask3.where(df.experiment.isin(experiment), True)
+    # 
+    # df = df[mask1 & mask2 & mask3]
+
+    if model:
+        if not isinstance(model, list):
+            model = [model]
+        df = df.loc[df.model.isin(model), :]
+    if variant:
+        if not isinstance(variant, list):
+            variant = [variant]
+        df = df.loc[df.variant.isin(variant), :]
+    if experiment:
+        if not isinstance(experiment, list):
+            experiment = [experiment]
+        df = df.loc[df.experiment.isin(experiment), :]
+    
+    if grouped:
+        if group_order is None:
+            group_order =['experiment', 'model', 'variant']
+        out = df.groupby(group_order)['local_path'].apply(list).tolist()
+    else:
+        out = df['local_path'].to_list()
+        
+        
+    return out
+
 ################################################################################
 def get_cmip6_run_attrs(dirname, by=None, model=None, variant=None, experiment=None):
     '''
@@ -110,8 +161,8 @@ def get_cmip6_run_attrs(dirname, by=None, model=None, variant=None, experiment=N
     
     pattern = re.compile(rf"tas_Amon_{segments['model']}_{segments['experiment']}_{segments['variant']}_.+\.nc")
 
-    p = Path(ROOT, dirname)
-    fps = list(p.iterdir())
+    p = Path(ROOT, dirname).glob('**/*.nc')
+    fps = list(p)
     fps = [fp for fp in fps if re.match(pattern, fp.name)]
     if by is not None:
         segment_num = segment_map[by]
@@ -144,7 +195,7 @@ def extract_cmip_points(ds, glaciers, variable, freq, mip, use_cache=True):
         pt = da.interp(lat=lat, lon=lon, method='linear')
         pt = pt.expand_dims('rgiid')
         pt = pt.assign_coords(dict(rgiid=('rgiid', [rgiid])))
-        pt.to_netcdf(p)
+        pt.to_netcdf(p, format='netcdf4', engine='h5netcdf', unlimited_dims=['time'])
             
         
     
@@ -166,20 +217,22 @@ def read_cmip_model(fps=None, freq='jjas', mip=6):
 
     '''
     
+    # todo: could make this into a cleaning function then use open_mfdataset for loading
     def read_file(fp):
         try:
-            ds = xr.open_dataset(fp, use_cftime=True, cache=False)  # .drop_vars(['time_bnds', 'lat_bnds', 'lon_bnds'])
+            logging.debug(fp)
+            ds = xr.open_dataset(fp, use_cftime=True, cache=False, decode_times=True)  # .drop_vars(['time_bnds', 'lat_bnds', 'lon_bnds'])
         except:
             raise ValueError(f'Failed on {fp}')
         ds['time'] = xr.apply_ufunc(cftime.date2num, ds.time,
                                     kwargs={'units'        : 'common_years since 0000-01-01', 'calendar': '365_day',
                                             'has_year_zero': True})
 
-        ds = ds.expand_dims('mip')
-        ds = ds.expand_dims('model')
-        ds = ds.expand_dims('experiment')
-        ds = ds.expand_dims('variant')
-        ds = ds.expand_dims('collection')
+        # ds = ds.expand_dims('mip')
+        # ds = ds.expand_dims('model')
+        # ds = ds.expand_dims('experiment')
+        # ds = ds.expand_dims('variant')
+        # ds = ds.expand_dims('collection')
         if mip == 6:
             ds = ds.assign_coords(dict(mip=('mip', [6])))
             ds = ds.assign_coords(dict(model=('model', [ds.attrs['source_id']])))
@@ -189,7 +242,7 @@ def read_cmip_model(fps=None, freq='jjas', mip=6):
             res = re.findall('([A-Za-z]+)(\d+)', ds.attrs['variant_label'])
             variant_components = dict(res)
             
-            # handle special cases
+            # sort into collections
             if ds.attrs['experiment_id'] == 'hist-nat':
                 ds = ds.assign_coords(dict(collection=('collection', ['nat'])))
             elif ds.attrs['experiment_id'] in ['past1000', 'past2k']:
@@ -205,9 +258,11 @@ def read_cmip_model(fps=None, freq='jjas', mip=6):
             ds = ds.assign_coords(dict(experiment=('experiment', [ds.attrs['experiment_id']])))
             ds = ds.assign_coords(dict(variant=('variant', [f"r{ds.attrs['realization']}i{ds.attrs['initialization_method']}p{ds.attrs['physics_version']}f1"])))
             
-            # handle special cases
+            # sort into collections
             if ds.attrs['experiment_id'] == 'historicalNat':
                 ds = ds.assign_coords(dict(collection=('collection', ['nat'])))
+            elif ds.attrs['experiment_id'] in ['past1000', 'past2k']:
+                ds = ds.assign_coords(dict(collection=('collection', ['lm'])))
                 
         ds = ds.drop_vars(['time_bnds', 'lat_bnds', 'lon_bnds', 'height'], errors='ignore')
         ds = ds.drop_dims('bnds', errors='ignore')
@@ -344,10 +399,11 @@ def get_cmip6(dirname='data/external/gcm/cmip6', by=None, model=None, experiment
         return _get_cmip6_by_attrs(dirname, freq, by, model, experiment, variant)
 
 ########################################################################################
-def cmip_fname_to_dict(fname):
+def cmip_fname_to_dict(p):
     segment_map = ['variable', 'frequency', 'model', 'experiment', 'variant']
-    segments = fname.name.split('_')
+    segments = p.name.split('_')
     segments = {segment_map[i]:segments[i] for i in range(0, 5)}
+    segments['local_path'] = p
     
     return segments
     
@@ -414,7 +470,7 @@ def get_glacier_gcm(rgiids, variable, freq, mip=6, dirname=Path(ROOT, 'features/
     if isinstance(rgiids, list):
         pattern = f'^cmip{mip}_{list_to_regex_or(rgiids)}_{variable}_{freq}'
         fps = [fp for fp in fps if re.match(pattern, fp.name)]
-        ds = xr.open_mfdataset(fps, use_cftime=True)
+        ds = xr.open_mfdataset(fps, use_cftime=True, engine='rasterio')
     else:
         rgiid = rgiids
         pattern = f'^cmip{mip}_{rgiid}_{variable}_{freq}'
