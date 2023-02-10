@@ -3,6 +3,7 @@ data/**/*.nc
 data/**/*.nc.*
 features/**/*.nc
 data/**/*.nc4
+data/external/
 *.bak
 *..status
 *.status
