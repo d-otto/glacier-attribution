@@ -31,3 +31,17 @@ glaciers:
       T0: 13.68
       P0: 3.5
       ss_noise_profile: "features/flowline/flowline2d_RGI60-01.09162.ss.noise.pickle"
+  RGI60-01.00570:
+    name: 'Gulkana'
+    flowline_params:
+  RGI60-11.01450:
+    name: 'Aletch'
+    flowline_params:
+  RGI60-11.01346:
+    name: 'Unterer Grindelwald'
+  RGI60-11.01238:
+    name: 'Rhone'
+  RGI60-11.03646:
+    name: 'Bossons'
+  RGI60-11.03643:
+    name: 'Mer de Glace'
