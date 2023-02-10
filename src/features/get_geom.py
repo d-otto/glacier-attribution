@@ -19,15 +19,19 @@ import geopandas as gpd
 import netCDF4 as nc
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from pathlib import Path
 import oggm
-from oggm import cfg, utils
+from oggm import utils
 from oggm import workflow
 from oggm import graphics
 from oggm import tasks
 from oggm.core.massbalance import MultipleFlowlineMassBalance, LinearMassBalance
+from pathlib import Path
 
+from config import cfg, ROOT
 
 mpl.use('qtagg')
+
 
 #%%
 def flatten(items, seqtypes=(list, tuple)):
@@ -40,26 +44,38 @@ def flatten(items, seqtypes=(list, tuple)):
         pass
     return items
 
-# %%
+#%%
 
-cfg.initialize(logging_level='DEBUG')
-cfg.PATHS['working_dir'] = utils.mkdir('~/oggm_out')
-cfg.PARAMS['use_tstar_calibration'] = True
-cfg.PARAMS['prcp_scaling_factor'] = 2.5
-cfg.PARAMS['climate_qc_months'] = 3
-cfg.PARAMS['use_winter_prcp_factor'] = False
-cfg.PARAMS['min_mu_star'] = 50
-cfg.PARAMS['use_multiprocessing'] = False
-cfg.PARAMS['check_calib_params'] = False
-cfg.PARAMS['use_rgi_area'] = True
-#cfg.PATHS['working_dir'] = utils.gettempdir(dirname='OGGM-ebands', reset=True)
+
 
 # %%
 
-rgi_ids = ['RGI60-11.00897',  # hintereisferner
-           'RGI60-11.03638',  # argentiere
-           'RGI60-02.18778',  # south cascade
-           'RGI60-01.09162']  # wolverine
+#oggm.cfg.initialize(logging_level='DEBUG')
+oggm.cfg.initialize(logging_level='DEBUG')
+# oggm.cfg.PATHS['dl_cache_dir'] = Path(r'\\wsl.localhost\Ubuntu\home\drotto\OGGM\download_cache')
+# oggm.cfg.PATHS['rgi_dir'] = Path(r'\\wsl.localhost\Ubuntu\home\drotto\OGGM\rgi')
+# oggm.cfg.PATHS['test_dir'] = Path(r'\\wsl.localhost\Ubuntu\home\drotto\OGGM\tests')
+# oggm.cfg.PATHS['tmp_dir'] = Path(r'\\wsl.localhost\Ubuntu\home\drotto\OGGM\tmp')
+# oggm.cfg.PATHS['working_dir'] = Path(r'\\wsl.localhost\Ubuntu\home\drotto\oggm_out')
+oggm.cfg.PATHS['dl_cache_dir'] = Path(r'~/OGGM/download_cache')
+oggm.cfg.PATHS['rgi_dir'] = Path(r'~/OGGM/rgi')
+oggm.cfg.PATHS['test_dir'] = Path(r'~/OGGM/tests')
+oggm.cfg.PATHS['tmp_dir'] = Path(r'~/OGGM/tmp')
+oggm.cfg.PATHS['working_dir'] = Path(r'~/oggm_out')
+oggm.cfg.PARAMS['prcp_scaling_factor'] = 2.5
+oggm.cfg.PARAMS['climate_qc_months'] = 3
+oggm.cfg.PARAMS['use_winter_prcp_factor'] = False
+oggm.cfg.PARAMS['min_mu_star'] = 50
+oggm.cfg.PARAMS['max_mu_star'] = 1000
+oggm.cfg.PARAMS['use_multiprocessing'] = False
+oggm.cfg.PARAMS['check_calib_params'] = False
+oggm.cfg.PARAMS['use_rgi_area'] = True
+oggm.cfg.PARAMS['use_tstar_calibration'] = True
+#oggm.cfg.PATHS['working_dir'] = utils.gettempdir(dirname='OGGM-ebands', reset=True)
+
+# %%
+
+rgi_ids = list({k: v for k, v in cfg['glaciers'].items()}.keys())
 
 # %%
 
@@ -75,7 +91,7 @@ gdirs = workflow.init_glacier_directories(rgi_ids, from_prepro_level=2, prepro_b
 
 # %%
 
-cfg.PARAMS['elevation_band_flowline_binsize'] = 10  # meters
+oggm.cfg.PARAMS['elevation_band_flowline_binsize'] = 10  # meters
 
 workflow.execute_entity_task(tasks.define_glacier_region, gdirs, source=['ALASKA', 'NASADEM'])#, 'ARCTICDEM', 'COPDEM30', 'TANDEM', 'ASTER'])
 workflow.execute_entity_task(tasks.process_dem, gdirs)
@@ -85,6 +101,9 @@ workflow.execute_entity_task(tasks.fixed_dx_elevation_band_flowline, gdirs)
 workflow.execute_entity_task(tasks.compute_downstream_line, gdirs)
 workflow.execute_entity_task(tasks.compute_downstream_bedshape, gdirs)
 #workflow.execute_entity_task(tasks.catchment_width_correction, gdirs)  # not sure if I should do this or not
+
+#%%
+
 
 
 # %% climate tasks
@@ -105,6 +124,8 @@ list_tasks = [
     tasks.prepare_for_inversion,
     tasks.mass_conservation_inversion,
     tasks.filter_inversion_output,
+    tasks.gridded_attributes,
+    # tasks.gridded_mb_attributes  # only works with centerlines
 ]
 for task in list_tasks:
     workflow.execute_entity_task(task, gdirs)
@@ -130,7 +151,7 @@ for i, rgiid in enumerate(rgi_ids):
                 except EOFError:
                     break
         # rewrite to other location
-        fp = f'data/interim/oggm_flowlines/{rgiid}.{gdir_obj}.pickle'
+        fp = Path(f'/mnt/c/sandbox/glacier-attribution/data/interim/oggm_flowlines/{rgiid}.{gdir_obj}.pickle')
         with gzip.open(fp, "wb") as f:
             # hopefully removes dependencie on oggm/salem
             objs = flatten(objs)

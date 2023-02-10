@@ -23,19 +23,39 @@ logging.basicConfig(level=logging.INFO)
 #%%
 
 ensembles = [f"r{d}i1f1p1" for d in range(1, 200)]
+var_names = ['tas', 'pr', 'prsn']
 # p1k_ensembles = [f"rii1f1p1" for d in [121, 122, 1221, 123, 124, 125, 126, 127, 128]]
 # ensembles.extend(p1k_ensembles)
-
-files = find_files(
-    project='CMIP6',
-    mip='Amon',
-    short_name='tas',
-    dataset='*',
-    exp=['historical', 'hist-nat', 'past1000', 'past2k'],
-    # ensemble=ensembles,
-)  
-
-dirname = Path(r'C:\sandbox\glacier-attribution\data\external\gcm\cmip6')
+files = []
+for var_name in var_names:
+    logging.info(f"Searching for: {var_name}")
+    fs = find_files(
+        project='CMIP5',
+        # output='output1',
+        mip='Amon',
+        short_name=var_name,
+        dataset='*',
+        # dataset='MPI-ESM-P',
+        exp=['historical', 'historicalNat', 'past1000', 'past2k'],
+        parent_experiment_id='past1000',
+        # start_year=['185001, 185101'],
+        # end_year=['200012']
+        # ensemble=ensembles[0],
+        # ensemble='r1i1p1',
+    )
+    files.extend(fs)
+    fs = find_files(
+        project='CMIP6',
+        mip='Amon',
+        short_name=var_name,
+        dataset='*',
+        exp=['historical', 'hist-nat', 'past1000', 'past2k'],
+        # ensemble=ensembles,
+    )
+    files.extend(fs)
+logging.info('Search complete.')
+    
+dirname = Path(r'H:\data\gcm\cmip6')
 download(files, dest_folder=dirname)
 
 #%%
