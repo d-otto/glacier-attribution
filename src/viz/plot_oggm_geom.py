@@ -134,3 +134,98 @@ for rgiid in rgiids:
     graphics.plot_inversion(gdir, ax=ax)
     fig.suptitle(cfg['glaciers'][rgiid]['name'])
     plt.savefig(Path('/mnt/c/sandbox/glacier-attribution/plots/case_study/glacier_geom/', f'{rgiid}_inverted_thickness.png'))
+    
+    #%%
+
+    from oggm import graphics
+    
+    dirname = 'data/interim/oggm_flowlines'
+    gname = 'Argentiere'
+    fp = dirname / f'e_bands/{rgiid}.downstream_line.pickle'
+    with gzip.open(fp, "rb") as openfile:
+        eband_fl, eband_dsl = pickle.load(openfile)
+    eband_fl = eband_fl.__dict__
+    fp = dirname / f'geometrical_centerlines/{rgiid}.downstream_line.pickle'
+    with gzip.open(fp, "rb") as openfile:
+        geom_fl = pickle.load(openfile)
+    geom_dsl = geom_fl[-1]
+    geom_fl = geom_fl[-2].__dict__
+
+    fp = dirname / f'e_bands/{rgiid}.model_flowlines.pickle'
+    with gzip.open(fp, "rb") as openfile:
+        ebfl = pickle.load(openfile)
+    fp = dirname / f'geometrical_centerlines/{rgiid}.model_flowlines.pickle'
+    with gzip.open(fp, "rb") as openfile:
+        gcfl = pickle.load(openfile)
+
+    f, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 14), sharex=True, sharey=True)
+    graphics.plot_modeloutput_section(gcfl, ax=ax1)
+    ax1.set_title('Geometrical centerline')
+    graphics.plot_modeloutput_section(ebfl, ax=ax2)
+    ax2.set_title('Elevation band flowline')
+    f.suptitle(f'{rgiid}: {gname}')
+    f.show()
+
+    # fig = plt.figure()
+    # graphics.plot_modeloutput_section_withtrib(gcfl, fig=fig)
+
+    # pull variables for the model
+    # this results in a slight error in the x spacing because idx is not an exact continuation of geom_fl
+    # it can be minimized by using a small bin size for the elevation band
+    idx = np.where(eband_fl['bed_h'] - geom_fl['bed_h'][0] > 0)[0]
+    if idx.size > 0:
+        len0 = len(geom_fl['bed_h'])
+        len1 = len0 + len(idx)  # length of the final profile
+        zb = np.full(len1, fill_value=np.nan)
+        zb[idx[-1] + 1:] = geom_fl['bed_h']
+        zb[idx] = eband_fl['bed_h'][idx]
+    else:
+        zb = geom_fl['bed_h']
+        len1 = len(geom_fl['bed_h'])
+
+    # extra x's in the eb fl, prepend these to the geom fl
+    xmax = max(
+        geom_fl['dis_on_line'] * geom_fl['map_dx'])  # x from the geom flowline, treating this as the "true length"
+    x = np.linspace(0, xmax, len1)
+
+    # interp eband thickness to proper length
+    eband_x = eband_fl['dis_on_line'] * eband_fl['map_dx']
+    h = np.interp(x, eband_x, eband_fl['_thick'])
+    eband_l = np.where(h > 0)[-1] * eband_fl['map_dx']
+
+    # interp thickness to proper length after filling in the ds line
+    w = eband_fl['_w0_m'].copy()  # w from the eband flowline, has nans that need to be filled after terminus
+    idx_term = np.argmax(np.isnan(w)) - 1  # where is the terminus
+    nan_len = len(w) - idx_term
+    ds_len = len(eband_dsl['w0s'])  # length of the the data to fill in the nan's in w
+    w[idx_term:idx_term + ds_len] = eband_dsl['w0s']  # fill the nan's in w
+    if any(np.isnan(w)):  # not all nan's get filled, so ffill the remaining
+        idx_nan = np.argmax(np.isnan(w))
+        w[idx_nan:] = w[idx_nan - 1]
+    w = np.interp(x, eband_x, w)
+
+    # calculate length to check
+    ebfl_l = np.where(ebfl[0].thick > 0)[0][-1] * ebfl[0].map_dx
+    gcfl_l = np.where(gcfl[0].thick > 0)[0][-1] * gcfl[0].map_dx
+
+    # calculate 3d length
+    ebfl_3dl = np.sqrt(np.diff(ebfl[0].surface_h, 1)**2 + np.diff(ebfl[0].dis_on_line * ebfl[0].map_dx, 1)**2)
+    ebfl_3dl = np.where(ebfl[0].thick[1:] > 0, ebfl_3dl, 0).sum()
+    gcfl_3dl = np.sqrt(np.diff(gcfl[0].surface_h, 1)**2 + np.diff(gcfl[0].dis_on_line * gcfl[0].map_dx, 1)**2)
+    gcfl_3dl = np.where(gcfl[0].thick[1:] > 0, gcfl_3dl, 0).sum()
+
+    # calculate area to check
+    ebfl_a = ebfl[0].widths_m * ebfl[0].dx_meter * 1e-6
+    ebfl_a = np.where(ebfl[0].thick > 0, ebfl_a, 0)
+    ebfl_a = ebfl_a.sum()
+    gcfl_a = gcfl[0].widths_m * gcfl[0].dx_meter * 1e-6
+    gcfl_a = np.where(gcfl[0].thick > 0, gcfl_a, 0)
+    gcfl_a = gcfl_a.sum()
+
+    fig, ax = plt.subplots(1, 1)
+    ax.plot(x, zb + h, c='blue')
+    ax.plot(x, zb, c='black')
+    ax.set_aspect('equal')
+    ax.plot(x, w, c='red')
+    ax.grid()
+    fig.show()

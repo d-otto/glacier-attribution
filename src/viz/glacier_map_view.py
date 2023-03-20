@@ -72,7 +72,7 @@ oggm.cfg.PARAMS['check_calib_params'] = False
 oggm.cfg.PARAMS['use_rgi_area'] = True
 oggm.cfg.PARAMS['use_tstar_calibration'] = True
 
-rgi_ids = oggm.utils.get_rgi_glacier_entities(['RGI60-01.09162'])
+rgi_ids = oggm.utils.get_rgi_glacier_entities(['RGI60-11.03638'])
 #gdirs = oggm.workflow.init_glacier_directories(rgi_ids)
 prepro_path = 'https://cluster.klima.uni-bremen.de/~oggm/gdirs/oggm_v1.6/L3-L5_files/centerlines/w5e5/qc0/pcpwin/match_geod_pergla/'
 gdirs = oggm.workflow.init_glacier_directories(rgi_ids, from_prepro_level=3, prepro_border=160, prepro_base_url=prepro_path)  # 160 is max border available rn
@@ -357,3 +357,18 @@ fig.show()
 # fig.tight_layout()
 # # fp = rf'C:\sandbox\atmos\atms502\plots\brunt-vaisala-freq_{level}hPa_{abs(extent[0])}{abs(extent[1])}{abs(extent[2])}{abs(extent[3])}_{dt:%Y%m%d-%HUTC}.png'
 # # plt.savefig(fp, transparent=False)
+
+
+#%%
+
+x, y = zip(*line.coords)
+
+fig, ax = plt.subplots(1,1)
+ax.plot(x, y)
+fig.show()
+
+#%%
+
+fig, ax = plt.subplots(1,1)
+ax.plot(x, y)
+fig.show()
