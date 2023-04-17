@@ -23,6 +23,7 @@ from config import ROOT, cfg
 from src.climate import temp_stable
 from src.data import get_rgi
 import pickle
+import re
 
 # ylim0, ylim1 = ax[3, 1].get_ylim()
 # diff1 = ylim1-ylim0
@@ -41,10 +42,8 @@ params = cfg['glaciers'][rgiid]['flowline_params']
 
 #%%
 
-ensemble_dir = Path(r"C:\sandbox\glacier-attribution\models\ensembles\lmr")
-# ensemble_files = ensemble_dir.glob(f'*{rgiids[0]}*Pnoise*.pickle')
-ensemble_files = ensemble_dir.glob(f"*{rgiids[0]}*.lmr.[0-9].pickle")
-# ensemble_files = ensemble_dir.glob(f'*{rgiids[0]}*.lmr.[0-9].early_ref.pickle')
+ensemble_dir = Path(r"C:\sandbox\glacier-attribution\models\ensembles\synthetic")
+ensemble_files = [f for f in list(ensemble_dir.iterdir()) if re.search(rf'{rgiids[0]}.synthetic.[0-9]+.pickle', str(f.name))]
 runs = []
 for p in ensemble_files:
     with open(p, "rb") as f:
@@ -65,19 +64,23 @@ def smooth(d, window=sm_window, axis=0):
 
 
 dm = ds.mean(dim="nrun")
+dmed = ds.median(dim='nrun')
 name = cfg['glaciers'][rgiid]['name']
 rgi_geom = rgi.loc[rgi.index == rgiid].iloc[0]
-t0 = 1850
-t1 = 1999
-trgi = int(rgi_geom['EndDate'][0:4])
-ds0 = dm.sel(time=t0)
-ds1 = dm.sel(time=t1)
+t0 = params['L0']['year']
+t1 = 1990
+trgi = int(rgi_geom['BgnDate'][0:4])  # time rgi
+ds0 = dmed.sel(time=t0)
+ds1 = dmed.sel(time=t1)
+# todo: remove this! just for gala fig
+t1 = 2000
+# todo: end
 
 # cmap = plt.cm.plasma(np.linspace(0, 0.75, len(ds.nrun)))
 # cmap = plt.cm.brg(np.linspace(0, 1, len(ds.nrun)))
 
 pad = 50
-pedge = int(dm.edge_idx[-100:].mean()) + pad
+pedge = int(dm.edge_idx.sel(time=t0)) + pad
 x = dm.x[:pedge]
 zb = dm.zb[:pedge]
 z0 = zb + ds0.h[:pedge]
@@ -93,7 +96,7 @@ poly1 = ax[0].fill_between(
             z0,
             fc="none",
             ec="lightblue",
-            label=f"{t0} ensemble mean",
+            label=f"{t0} median",
             hatch='....'
         )
 
@@ -103,7 +106,7 @@ poly1 = ax[0].fill_between(
             z1,
             fc="lightblue",
             ec="lightblue",
-            label=f"{t1} ensemble mean",
+            label=f"{t1} median",
             
         )
 ax[0].axvline(rgi_geom.Lmax/1000, c='red', label=f"{trgi} extent (RGI)")
@@ -118,10 +121,10 @@ ax[1].plot(
     alpha=0.75,
     label='Ensemble mean length',
 )
-ax[1].scatter(trgi, rgi_geom.Lmax/1000, c='gold')
-ax[1].scatter(params['L0']['year'], params['L0']['value']/1000, c='red')
-ax[1].axvline(trgi, c='gold')
-ax[1].axvline(params['L0']['year'], c='red')
+ax[1].scatter(trgi, rgi_geom.Lmax/1000, c='red')
+ax[1].scatter(params['L0']['year'], params['L0']['value']/1000, c='gold')
+ax[1].axvline(trgi, c='red')
+ax[1].axvline(params['L0']['year'], c='gold')
 ax[1].set_xlabel('Year')
 ax[1].set_ylabel('Length (km)')
 ax[1].set_xlim(dm.time[0], None)
@@ -166,4 +169,4 @@ for axis in ax.ravel():
     axis.tick_params(axis='both', which='both', direction='in')
 ax[0].set_title(f"{rgiid}: {name}")
 fig.show()
-plt.savefig(Path(ROOT, f"plots/case_study/lmr_ensemble/{rgiids[0]}.profile.lmr.png"))
+plt.savefig(Path(ROOT, f"plots/case_study/lmr_ensemble/{rgiids[0]}.profile.synthetic.png"))

@@ -22,6 +22,7 @@ from config import ROOT, cfg
 from src.climate import temp_stable
 from src.data import get_rgi
 import pickle
+import re
 
 # ylim0, ylim1 = ax[3, 1].get_ylim()
 # diff1 = ylim1-ylim0
@@ -38,9 +39,10 @@ rgi = get_rgi(rgiids, from_sqllite=True)
 
 #%%
 
-ensemble_dir = Path(r"C:\sandbox\glacier-attribution\models\ensembles\lmr")
-# ensemble_files = ensemble_dir.glob(f'*{rgiids[0]}*Pnoise*.pickle')
-ensemble_files = ensemble_dir.glob(f"*{rgiids[0]}*.lmr.[0-9].pickle")
+ensemble_dir = Path(r"C:\sandbox\glacier-attribution\models\ensembles\synthetic")
+# ensemble_files = [f for f in list(ensemble_dir.iterdir()) if re.search(rf'{rgiids[0]}.lmr.[0-9]+.pickle', str(f.name))]
+ensemble_files = [f for f in list(ensemble_dir.iterdir()) if re.search(rf'{rgiids[0]}.synthetic.[0-9]+.pickle', str(f.name))]
+
 # ensemble_files = ensemble_dir.glob(f'*{rgiids[0]}*.lmr.[0-9].early_ref.pickle')
 runs = []
 for p in ensemble_files:
@@ -144,8 +146,8 @@ ax[1, 0].fill_between(
     label="+/- 2$\sigma$",
 )
 ax[1, 0].set_ylabel("Specific mass balance (m/yr)")
-sp_mb_pi = ds_pi.sp_mb.coarsen(time=150, side="right", boundary="trim").mean().to_numpy().ravel()
-sp_mb_i = ds_i.sp_mb.coarsen(time=150, side="right", boundary="trim").mean().to_numpy().ravel()
+sp_mb_pi = ds_pi.sp_mb.coarsen(time=30, side="right", boundary="trim").mean().to_numpy().ravel()
+sp_mb_i = ds_i.sp_mb.coarsen(time=30, side="right", boundary="trim").mean().to_numpy().ravel()
 bins = np.histogram(np.hstack((sp_mb_pi, sp_mb_i)), bins=20)[1]  # get the bin edges
 ax[1, 1].hist(
     sp_mb_pi,
@@ -176,8 +178,8 @@ ax[2, 0].fill_between(
 )
 
 ax[2, 0].set_ylabel("Temperature ($\degree C$)")
-T_pi = ds_pi.T.coarsen(time=150, side="right", boundary="trim").mean().to_numpy().ravel()
-T_i = ds_i.T.coarsen(time=150, side="right", boundary="trim").mean().to_numpy().ravel()
+T_pi = ds_pi.T.coarsen(time=30, side="right", boundary="trim").mean().to_numpy().ravel()
+T_i = ds_i.T.coarsen(time=30, side="right", boundary="trim").mean().to_numpy().ravel()
 bins = np.histogram(np.hstack((T_pi, T_i)), bins=20)[1]  # get the bin edges
 ax[2, 1].hist(
     T_pi,
@@ -212,7 +214,7 @@ for j in np.arange(0, ax.shape[-1], 1):
         ax[i, j].set_axisbelow(True)
 fig.suptitle(f"{rgiids[0]} ({glaciers[0]}) T=LMR, P=noise; Tref={ds.ref_period[0]} - {ds.ref_period[1]}")
 fig.show()
-plt.savefig(Path(ROOT, f"plots/case_study/lmr_ensemble/{rgiids[0]}.lmr.png"))
+plt.savefig(Path(ROOT, f"plots/case_study/lmr_ensemble/{rgiids[0]}.synthetic.png"))
 
 
 #%%
