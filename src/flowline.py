@@ -71,8 +71,6 @@ class get_flowline_geom:
         p = Path(ROOT, rf'data\interim\oggm_flowlines\flowline_geom_{rgiid}_raw.csv')
         df = pd.DataFrame(dict(x=x, zb=zb, w=w, h0=h0))
         df.to_csv(p, index=False)
-
-        df = pd.DataFrame(dict(x=x, zb=zb, w=w, h0=h0))
         if rgiid == "RGI60-11.00897":  # Hintereisferner
             df['zb'].iloc[133:145] = np.nan
             df['zb'] = df['zb'].interpolate(method='spline', order=3)
@@ -93,7 +91,7 @@ class get_flowline_geom:
             
             df['h0'] = df['h0'] - (df['zb'] - zb[0:len(df['zb'])])
         elif rgiid == "RGI60-01.09162":  # wolverine
-            df = df.iloc[:250]
+            df = df.iloc[:300]
             df['zb'].iloc[0:10] = np.linspace(1505, 1496, 10)
             
             df['zb'].iloc[143:159] = np.nan
@@ -164,9 +162,10 @@ class get_flowline_geom:
         ax.grid()
         ax.legend()
         ax.set_title(f'{rgiid} {name}')
-        fig.show()
         p = Path(ROOT, rf'data\interim\oggm_flowlines\flowline_geom_QC_{rgiid}_{name.lower().replace(" ", "")}.png')
         plt.savefig(p)
+        fig.show()
+        
 
 
         fig, ax = plt.subplots(2, 1, sharex=True, dpi=200)
@@ -185,9 +184,10 @@ class get_flowline_geom:
             axis.grid()
             axis.legend()
         ax[0].set_title(f'{rgiid} {name}')
-        fig.show()
         p = Path(ROOT, rf'data\interim\oggm_flowlines\flowline_geom_{rgiid}_{name.lower().replace(" ", "")}.png')
         plt.savefig(p)
+        fig.show()
+        
             
         #%%
         
